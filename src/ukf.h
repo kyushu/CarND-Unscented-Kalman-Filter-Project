@@ -75,6 +75,8 @@ public:
 
   MatrixXd Zsig_;
 
+  MatrixXd H_laser_;
+
   ///* Sigma point spreading parameter
   double lambda_;
 

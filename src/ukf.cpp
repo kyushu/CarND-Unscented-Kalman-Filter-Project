@@ -7,6 +7,8 @@ using Eigen::MatrixXd;
 using Eigen::VectorXd;
 using std::vector;
 
+const double EPS = 0.0001;
+
 /**
  * Initializes Unscented Kalman filter
  * This is scaffolding, do not modify
@@ -89,6 +91,12 @@ UKF::UKF() {
 		// double weight = 0.5/(n_aug_+lambda_);
 		weights_(i) = 0.5/(n_aug_+lambda_);
 	}
+
+	H_laser_ = MatrixXd(2, 5);
+	H_laser_ << 1, 0, 0, 0, 0,
+			  	0, 1, 0, 0, 0;
+	
+
 
 	// the current NIS for radar
 	NIS_radar_ = 0.0;
@@ -218,7 +226,7 @@ void UKF::Prediction(double delta_t) {
 		double px_p, py_p;
 
 		// avoid division by zero
-		if (fabs(yawd) > 0.001) {
+		if (fabs(yawd) > EPS) {
 			px_p = p_x + v/yawd * ( sin(yaw + yawd*delta_t) - sin(yaw));
 			py_p = p_y + v/yawd * ( cos(yaw)- cos(yaw + yawd*delta_t));
 		}
@@ -289,7 +297,26 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
 
 	You'll also need to calculate the lidar NIS.
 	*/
+	VectorXd z_pred = H_laser_ * x_;
+	VectorXd y = meas_package.raw_measurements_ - z_pred;
+	MatrixXd Ht = H_laser_.transpose();
 
+	MatrixXd R = MatrixXd(2, 2);
+	R << std_laspx_*std_laspx_, 0,
+		0, std_laspy_*std_laspy_;
+	MatrixXd S = H_laser_ * P_ * Ht + R;
+	MatrixXd Si = S.inverse();
+	MatrixXd PHt = P_ * Ht;
+	MatrixXd K = PHt * Si;
+
+	//new estimate
+	x_ = x_ + (K * y);
+	long x_size = x_.size();
+	MatrixXd I = MatrixXd::Identity(x_size, x_size);
+	P_ = (I - K * H_laser_) * P_;
+
+
+/*
 	//extract measurement as VectorXd
 	VectorXd z = meas_package.raw_measurements_;
 
@@ -344,12 +371,13 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
 
 	//add measurement noise covariance matrix
 	S = S + R;
-
+*/
 	
 
 	/*****************************************************************************
 	 *  UKF Update for Lidar
 	 ****************************************************************************/
+/*	
 	//Kalman gain K;
 	MatrixXd K = Tc * S.inverse();
 
@@ -359,9 +387,10 @@ void UKF::UpdateLidar(MeasurementPackage meas_package) {
 	//update state mean and covariance matrix
 	x_ = x_ + K * z_diff;
 	P_ = P_ - K*S*K.transpose();
+*/
 
 	//calculate NIS
-	NIS_laser_ = z_diff.transpose() * S.inverse() * z_diff;
+	NIS_laser_ = y.transpose() * Si * y;
 	cout << " Lidar measurement : " << NIS_laser_ << "\n";
 }
 
@@ -400,8 +429,13 @@ void UKF::UpdateRadar(MeasurementPackage meas_package) {
 
 		// measurement model
 		Zsig(0, i) = sqrt(p_x*p_x + p_y*p_y);                       //r
-		Zsig(1, i) = atan2(p_y, p_x);                               //phi
-		Zsig(2, i) = (p_x*v1 + p_y*v2) / sqrt(p_x*p_x + p_y*p_y);   //r_dot
+		if(p_y==0 && p_x==0) {
+			Zsig(1, i) = 0;
+		} else {
+			Zsig(1, i) = atan2(p_y, p_x);                               //phi
+		}
+		
+		Zsig(2, i) = (p_x*v1 + p_y*v2) / std::max(EPS, sqrt(p_x*p_x + p_y*p_y));   //r_dot
   	}
 
 	//mean predicted measurement
